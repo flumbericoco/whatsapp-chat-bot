@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { chunkText } from '../src/lib/chunker';
 import { splitForWhatsApp } from '../src/lib/whatsapp';
+import { type ToolCall, parseToolArguments } from '../src/lib/llm';
+
+function toolCall(args: string): ToolCall {
+  return { id: 'call_1', type: 'function', function: { name: 'capture_lead', arguments: args } };
+}
+
+describe('parseToolArguments', () => {
+  it('parses a normal arguments payload', () => {
+    expect(parseToolArguments(toolCall('{"name":"Budi","email":""}'))).toEqual({
+      name: 'Budi',
+      email: '',
+    });
+  });
+
+  it('treats an empty arguments string as no arguments', () => {
+    expect(parseToolArguments(toolCall(''))).toEqual({});
+  });
+
+  it('does not throw on malformed JSON from the model', () => {
+    expect(parseToolArguments(toolCall('{"name": "Budi"'))).toEqual({});
+  });
+
+  it('rejects a non-object payload', () => {
+    expect(parseToolArguments(toolCall('"just a string"'))).toEqual({});
+  });
+});
 
 describe('chunkText', () => {
   it('keeps a short document as a single chunk', () => {

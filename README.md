@@ -5,8 +5,13 @@ Satu deployment melayani banyak client. Tiap client punya nomor WhatsApp,
 knowledge base, persona, dan kuota sendiri.
 
 - **WhatsApp**: Meta Cloud API resmi (webhook based)
-- **Otak**: Claude API + RAG dari knowledge base per tenant
+- **Otak**: PesatRouter (`pesat-flash` / `pesat-pro` / `pesat-lite`) + RAG dari
+  knowledge base per tenant
 - **Infra**: Cloudflare Workers, D1, Vectorize, Workers AI, KV, R2, Queues
+
+Endpoint model dipanggil lewat format OpenAI chat completions. Tidak ada SDK
+LLM di dependency, hanya `fetch` langsung, jadi provider bisa ditukar dengan
+mengubah dua variabel di `wrangler.toml`.
 
 ---
 
@@ -28,12 +33,12 @@ Meta Cloud API  --webhook-->  Worker /webhook/whatsapp
                                     |  rate limit per kontak
                                     |  cek kuota bulanan
                                     |  retrieve RAG (Vectorize, filter tenant_id)
-                                    |  Claude Messages API + tools
+                                    |  PesatRouter /chat/completions + tools
                                     v
                               Graph API sendMessage
 ```
 
-Webhook sengaja tidak memanggil Claude. Meta melakukan retry agresif kalau
+Webhook sengaja tidak memanggil model. Meta melakukan retry agresif kalau
 webhook tidak dijawab dalam hitungan detik, jadi semua kerja berat dipindah ke
 queue consumer.
 
@@ -59,7 +64,7 @@ Ini produk multi-tenant, jadi batas antar client harus jelas:
 - Akun Cloudflare dengan **Workers Paid plan** (5 USD/bulan). D1, Queues,
   Vectorize, dan R2 tidak tersedia di free plan.
 - Meta Business account + WhatsApp Business Platform app
-- Anthropic API key
+- API key PesatRouter
 
 ### 2. Buat resource Cloudflare
 
@@ -93,7 +98,7 @@ npm run db:migrate         # untuk production
 ### 4. Set secrets
 
 ```bash
-npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put LLM_API_KEY           # key sk-pesat-... dari PesatRouter
 npx wrangler secret put META_APP_SECRET       # Meta App Dashboard > Settings > Basic
 npx wrangler secret put META_VERIFY_TOKEN     # string bebas, dipakai lagi di langkah 6
 npx wrangler secret put ADMIN_API_KEY         # openssl rand -hex 32
@@ -218,33 +223,73 @@ percakapan. Berguna saat testing.
 
 ---
 
-## Model dan biaya
+## Model
 
-Default `claude-opus-5` dengan adaptive thinking pada effort `low`. Thinking
-sengaja dibiarkan menyala. Kalau thinking dimatikan di Opus 5, model kadang
-menulis pemanggilan tool sebagai teks biasa alih-alih tool_use block, dan
-eskalasi jadi diam-diam gagal. Effort `low` yang menurunkan biaya, bukan
-mematikan thinking.
+Default `pesat-flash`, diset di `wrangler.toml`. Kolom `model` per tenant
+menimpa default itu, jadi paket mahal bisa diarahkan ke `pesat-pro` dan paket
+murah ke `pesat-lite` tanpa mengubah kode:
 
-Kolom `model` per tenant memungkinkan paket murah pakai model lebih ringan
-tanpa mengubah kode. Perkiraan biaya Claude per balasan, asumsi input sekitar
-2.200 token dan output sekitar 350 token:
+```bash
+curl -X PATCH https://<worker>/api/tenants/<tenantId> \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "pesat-pro"}'
+```
 
-| Model | Input $/1M | Output $/1M | Perkiraan per balasan |
-|---|---|---|---|
-| `claude-opus-5` | 5.00 | 25.00 | ~$0.020 |
-| `claude-sonnet-5` | 2.00 | 10.00 | ~$0.008 |
-| `claude-haiku-4-5` | 1.00 | 5.00 | ~$0.004 |
+Parameter yang dikirim ke provider: `model`, `messages`, `tools`,
+`tool_choice: auto`, `max_tokens: 1024`, `temperature: 0.3`, `stream: false`.
+Timeout 60 detik per permintaan.
 
-Angka ini hanya biaya Claude, di luar Cloudflare dan Meta. Tarif berubah, jadi
-cek harga terbaru sebelum menetapkan harga jual. Untuk paket 50 ribu per bulan,
-Opus 5 tidak akan menutup biaya pada volume tinggi. Ukur dulu kualitas Haiku
-4.5 dan Sonnet 5 pada knowledge base asli sebelum memutuskan paket mana pakai
-model apa.
+### Verifikasi provider sebelum deploy
 
-Meta tidak lagi menagih service conversation yang dimulai customer dalam
-jendela 24 jam, tetapi template marketing dan utility tetap berbayar per
-percakapan. Verifikasi tarif Indonesia terbaru di dokumentasi Meta.
+Dua hal ini belum diuji terhadap endpoint sungguhan dan menentukan apakah bot
+berfungsi penuh. Jalankan sendiri sebelum menerima client:
+
+```bash
+# 1. Nama model yang benar-benar tersedia
+curl https://api.pesatrouter.com/v1/models \
+  -H "Authorization: Bearer $LLM_API_KEY"
+
+# 2. Apakah tool calling didukung. Ini yang menentukan apakah eskalasi
+#    ke agent dan penangkapan lead bisa jalan.
+curl https://api.pesatrouter.com/v1/chat/completions \
+  -H "Authorization: Bearer $LLM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "pesat-flash",
+    "messages": [{"role": "user", "content": "Saya mau bicara dengan orang, bukan bot."}],
+    "tools": [{"type": "function", "function": {
+      "name": "escalate_to_human",
+      "description": "Hand the conversation to a human agent.",
+      "parameters": {"type": "object",
+        "properties": {"reason": {"type": "string"}, "urgency": {"type": "string"}},
+        "required": ["reason", "urgency"]}}}],
+    "tool_choice": "auto"
+  }'
+```
+
+Kalau permintaan kedua mengembalikan `tool_calls`, semua fitur aktif. Kalau
+mengembalikan error 4xx, kode akan otomatis mencoba ulang tanpa `tools` supaya
+customer tetap dijawab, tetapi eskalasi dan lead capture mati diam-diam. Kasus
+itu dicatat sebagai `console.error`, jadi pantau lewat `npm run tail`.
+
+### Biaya
+
+Tarif PesatRouter belum diketahui, jadi tidak ada tabel biaya di sini. Sebelum
+menetapkan harga jual, ukur dulu:
+
+- Biaya per 1 juta token input dan output untuk tiga model tersebut
+- Token per balasan pada knowledge base asli. Endpoint
+  `GET /api/tenants/:id/usage` mencatat token input dan output sungguhan, jadi
+  setelah beberapa hari trafik angkanya bisa dibaca langsung dari sana.
+
+Untuk paket Rp 50.000 per bulan, biaya inference adalah faktor penentu apakah
+paket itu masuk akal, bukan detail teknis.
+
+Di sisi WhatsApp, Meta tidak lagi menagih service conversation yang dimulai
+customer dalam jendela 24 jam, tetapi template marketing dan utility tetap
+berbayar per percakapan. Verifikasi tarif Indonesia terbaru di dokumentasi
+Meta.
 
 ---
 
@@ -253,12 +298,11 @@ percakapan. Verifikasi tarif Indonesia terbaru di dokumentasi Meta.
 - **Rate limit** 15 pesan per kontak per menit, ditolak sebelum memanggil model
 - **Kuota bulanan** per tenant, dicek sebelum tiap balasan
 - **Deduplikasi** `wa_message_id` di D1, retry Meta tidak menghasilkan tagihan ganda
-- **Prompt caching** breakpoint di system prompt yang stabil per tenant
+- **Riwayat dibatasi** 20 turn terakhir, jadi percakapan panjang tidak terus
+  membesarkan token input
+- **Retrieval dibatasi** 5 passage dengan skor minimum 0.4
 - **Batas 3 ronde tool** per pesan
-
-Catatan soal caching: cache prefix baru aktif kalau prefix melewati batas
-minimum token model. Persona yang pendek kemungkinan tidak akan kena cache.
-Pantau `cache_read_input_tokens` kalau ingin memastikan.
+- **`max_tokens` 1024**, cukup untuk balasan WhatsApp yang pendek
 
 ---
 
@@ -280,6 +324,9 @@ Webhook lokal butuh tunnel publik agar Meta bisa memanggilnya, misalnya
 
 Daftar jujur, supaya tidak dijanjikan ke client sebelum ada:
 
+- Endpoint PesatRouter belum pernah dipanggil dari kode ini. Nama model dan
+  dukungan tool calling wajib diverifikasi dengan dua perintah di bagian
+  Verifikasi provider di atas.
 - Belum ada dashboard UI. Baru API, jadi client masih dilayani lewat curl atau
   frontend terpisah.
 - Ingest dokumen baru menerima teks. PDF dan DOCX harus diekstrak di luar dulu.

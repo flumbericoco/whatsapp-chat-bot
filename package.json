@@ -14,7 +14,6 @@
     "tail": "wrangler tail"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
     "hono": "^4.13.7"
   },
   "devDependencies": {

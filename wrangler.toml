@@ -7,7 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 # `wrangler secret put` (deployed) -- see .dev.vars.example.
 [vars]
 GRAPH_API_VERSION = "v23.0"
-DEFAULT_MODEL = "claude-opus-5"
+LLM_BASE_URL = "https://api.pesatrouter.com/v1"
+DEFAULT_MODEL = "pesat-flash"
 EMBEDDING_MODEL = "@cf/baai/bge-m3"
 
 [observability]

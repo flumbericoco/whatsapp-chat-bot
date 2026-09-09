@@ -1,4 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import type { Conversation, Env, InboundJob, Tenant } from '../types';
 import {
   appendMessage,
@@ -6,8 +5,13 @@ import {
   getRecentHistory,
   setConversationStatus,
 } from '../lib/conversations';
-import { buildRequestParams, createClaudeClient, extractText, extractToolUses } from '../lib/claude';
-import { buildContextBlock, buildSystemPrompt, noKnowledgeNotice } from '../lib/prompt';
+import {
+  type ChatMessage,
+  type ToolCall,
+  complete,
+  parseToolArguments,
+} from '../lib/llm';
+import { buildSystemMessage } from '../lib/prompt';
 import { retrieve } from '../lib/rag';
 import { getTenantById, getTenantToken } from '../lib/tenants';
 import { createWhatsAppClient } from '../lib/whatsapp';
@@ -97,19 +101,25 @@ async function generateReply(
   whatsapp: ReturnType<typeof createWhatsAppClient>,
 ): Promise<string> {
   const chunks = await retrieve(env, tenant.id, userText);
-  const contextBlock = buildContextBlock(chunks) ?? noKnowledgeNotice();
 
   const history = await getRecentHistory(env, conversation.id);
-  const messages: Anthropic.MessageParam[] = history.map((turn) => ({
-    role: turn.role === 'user' ? 'user' : 'assistant',
-    content: turn.content,
-  }));
+  const messages: ChatMessage[] = [
+    { role: 'system', content: buildSystemMessage(tenant, chunks) },
+    ...history.map(
+      (turn): ChatMessage => ({
+        // An agent's manual reply reads as the assistant to the model.
+        role: turn.role === 'user' ? 'user' : 'assistant',
+        content: turn.content,
+      }),
+    ),
+  ];
 
-  // The Messages API requires the first turn to be a user turn.
-  while (messages.length && messages[0]?.role !== 'user') messages.shift();
-  if (messages.length === 0) messages.push({ role: 'user', content: userText });
+  // getRecentHistory already contains this turn's inbound message, but if the
+  // window trimmed it away the question would be lost.
+  if (messages[messages.length - 1]?.role !== 'user') {
+    messages.push({ role: 'user', content: userText });
+  }
 
-  const client = createClaudeClient(env);
   const model = tenant.model ?? env.DEFAULT_MODEL;
 
   let inputTokens = 0;
@@ -117,33 +127,30 @@ async function generateReply(
   let text = '';
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await client.messages.create(
-      buildRequestParams({ model, system: buildSystemPrompt(tenant), contextBlock, messages }),
-    );
+    const result = await complete(env, model, messages, true);
+    inputTokens += result.inputTokens;
+    outputTokens += result.outputTokens;
 
-    inputTokens += response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0);
-    outputTokens += response.usage.output_tokens;
+    if (result.text) text = result.text;
 
-    if (response.stop_reason === 'refusal') {
-      console.warn(`model refused tenant=${tenant.id} category=${response.stop_details?.category}`);
-      text = tenant.fallback_message ?? DEFAULT_FALLBACK;
+    if (result.finishReason === 'content_filter') {
+      console.warn(`content filtered tenant=${tenant.id} conversation=${conversation.id}`);
+      text = text || (tenant.fallback_message ?? DEFAULT_FALLBACK);
       break;
     }
 
-    const roundText = extractText(response);
-    if (roundText) text = roundText;
+    if (result.toolCalls.length === 0) break;
 
-    const toolUses = extractToolUses(response);
-    if (toolUses.length === 0) break;
+    messages.push({
+      role: 'assistant',
+      content: result.text || null,
+      tool_calls: result.toolCalls,
+    });
 
-    messages.push({ role: 'assistant', content: response.content });
-
-    const results: Anthropic.ToolResultBlockParam[] = [];
-    for (const toolUse of toolUses) {
-      const result = await runTool(env, tenant, conversation, whatsapp, toolUse);
-      results.push({ type: 'tool_result', tool_use_id: toolUse.id, content: result });
+    for (const call of result.toolCalls) {
+      const output = await runTool(env, tenant, conversation, whatsapp, call);
+      messages.push({ role: 'tool', tool_call_id: call.id, content: output });
     }
-    messages.push({ role: 'user', content: results });
   }
 
   await recordUsage(env, tenant.id, inputTokens, outputTokens);
@@ -155,12 +162,12 @@ async function runTool(
   tenant: Tenant,
   conversation: Conversation,
   whatsapp: ReturnType<typeof createWhatsAppClient>,
-  toolUse: Anthropic.ToolUseBlock,
+  call: ToolCall,
 ): Promise<string> {
-  // Tool inputs are model-generated JSON; read fields defensively.
-  const input = toolUse.input as Record<string, unknown>;
+  const input = parseToolArguments(call);
+  const name = call.function.name;
 
-  if (toolUse.name === 'escalate_to_human') {
+  if (name === 'escalate_to_human') {
     const reason = String(input.reason ?? 'Customer requested a human agent');
     const urgency = String(input.urgency ?? 'normal');
     await setConversationStatus(env, conversation.id, 'human');
@@ -179,7 +186,7 @@ async function runTool(
     return 'Escalated. A human agent has been notified and now owns this conversation.';
   }
 
-  if (toolUse.name === 'capture_lead') {
+  if (name === 'capture_lead') {
     const email = String(input.email ?? '').trim();
     await env.DB.prepare(
       `INSERT INTO leads (id, tenant_id, conversation_id, name, phone, email, interest, notes, created_at)
@@ -200,5 +207,5 @@ async function runTool(
     return 'Lead saved.';
   }
 
-  return `Unknown tool: ${toolUse.name}`;
+  return `Unknown tool: ${name}`;
 }

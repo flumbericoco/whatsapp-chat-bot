@@ -9,11 +9,12 @@ export interface Env {
 
   // Vars
   GRAPH_API_VERSION: string;
+  LLM_BASE_URL: string;
   DEFAULT_MODEL: string;
   EMBEDDING_MODEL: string;
 
   // Secrets
-  ANTHROPIC_API_KEY: string;
+  LLM_API_KEY: string;
   META_APP_SECRET: string;
   META_VERIFY_TOKEN: string;
   ADMIN_API_KEY: string;

@@ -1,5 +1,6 @@
 # Copy to .dev.vars for local development. Never commit .dev.vars.
-ANTHROPIC_API_KEY="sk-ant-..."
+# PesatRouter key for the OpenAI-compatible chat completions endpoint.
+LLM_API_KEY="sk-pesat-..."
 # Meta app secret, used to verify the X-Hub-Signature-256 on every webhook POST.
 META_APP_SECRET="..."
 # Arbitrary string you also type into the Meta webhook config screen.
