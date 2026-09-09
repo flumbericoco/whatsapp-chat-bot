@@ -1,0 +1,26 @@
+{
+  "name": "pesat-wa-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant WhatsApp AI chatbot platform on Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply pesat-wa-bot --local",
+    "db:migrate": "wrangler d1 migrations apply pesat-wa-bot --remote",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "hono": "^4.13.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260908.1",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.130.0"
+  }
+}

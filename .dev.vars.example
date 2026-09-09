@@ -1,0 +1,11 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+ANTHROPIC_API_KEY="sk-ant-..."
+# Meta app secret, used to verify the X-Hub-Signature-256 on every webhook POST.
+META_APP_SECRET="..."
+# Arbitrary string you also type into the Meta webhook config screen.
+META_VERIFY_TOKEN="pesat-verify-change-me"
+# Platform owner key for the admin API. Generate: openssl rand -hex 32
+ADMIN_API_KEY="..."
+# Base64 of 32 random bytes, encrypts per-tenant WhatsApp tokens at rest.
+# Generate: openssl rand -base64 32
+ENCRYPTION_KEY="..."

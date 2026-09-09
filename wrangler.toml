@@ -1,0 +1,59 @@
+name = "pesat-wa-bot"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Public, non-secret configuration. Secrets go in .dev.vars (local) or
+# `wrangler secret put` (deployed) -- see .dev.vars.example.
+[vars]
+GRAPH_API_VERSION = "v23.0"
+DEFAULT_MODEL = "claude-opus-5"
+EMBEDDING_MODEL = "@cf/baai/bge-m3"
+
+[observability]
+enabled = true
+
+# --- D1: tenants, conversations, messages, leads, usage -------------------
+# npx wrangler d1 create pesat-wa-bot   (paste the returned id below)
+[[d1_databases]]
+binding = "DB"
+database_name = "pesat-wa-bot"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# --- Vectorize: per-tenant knowledge base embeddings ----------------------
+# npx wrangler vectorize create pesat-kb --dimensions=1024 --metric=cosine
+# npx wrangler vectorize create-metadata-index pesat-kb --property-name=tenant_id --type=string
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "pesat-kb"
+
+# --- Workers AI: embedding generation ------------------------------------
+[ai]
+binding = "AI"
+
+# --- KV: tenant config cache and per-contact rate limiting ---------------
+# npx wrangler kv namespace create CACHE
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# --- R2: original knowledge base documents -------------------------------
+# npx wrangler r2 bucket create pesat-wa-docs
+[[r2_buckets]]
+binding = "DOCS"
+bucket_name = "pesat-wa-docs"
+
+# --- Queue: webhook returns 200 fast, replies are generated off-thread ----
+# npx wrangler queues create wa-inbound
+# npx wrangler queues create wa-inbound-dlq
+[[queues.producers]]
+binding = "INBOUND"
+queue = "wa-inbound"
+
+[[queues.consumers]]
+queue = "wa-inbound"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "wa-inbound-dlq"
