@@ -14,6 +14,12 @@ EMBEDDING_MODEL = "@cf/baai/bge-m3"
 [observability]
 enabled = true
 
+# Dashboard served from the same Worker, so it shares an origin with /api and
+# needs no CORS. not_found_handling is left at its default so that unmatched
+# paths still reach the Worker; the dashboard routes on the URL hash instead.
+[assets]
+directory = "./public"
+
 # --- D1: tenants, conversations, messages, leads, usage -------------------
 # npx wrangler d1 create pesat-wa-bot   (paste the returned id below)
 [[d1_databases]]

@@ -30,6 +30,20 @@ async function loadTenant(env: Env, tenantId: string): Promise<Tenant | null> {
   return getTenantById(env, tenantId);
 }
 
+// --- Session -------------------------------------------------------------
+
+/**
+ * Tells the dashboard which panel to draw. A tenant key holder has no way to
+ * learn its own tenant id otherwise, so this is what makes a single frontend
+ * work for both the platform owner and a client.
+ */
+admin.get('/me', async (c) => {
+  const role = c.get('role');
+  if (role === 'admin') return c.json({ role, tenant: null });
+  const tenant = c.get('tenant');
+  return c.json({ role, tenant: tenant ? publicTenant(tenant) : null });
+});
+
 // --- Tenants -------------------------------------------------------------
 
 admin.post('/tenants', requireAdmin, async (c) => {

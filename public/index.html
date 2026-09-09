@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Pesat.ai WhatsApp Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <!-- Login. The API key is the only credential the backend understands. -->
+    <div id="login" class="login-wrap">
+      <form class="login-card" id="login-form">
+        <div class="brand">
+          <span class="brand-mark">P</span>
+          <div>
+            <h1>Pesat.ai Console</h1>
+            <p class="muted">WhatsApp AI chatbot</p>
+          </div>
+        </div>
+        <label for="key-input">API key</label>
+        <input
+          id="key-input"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="pk_... atau key admin"
+          required
+        />
+        <label class="checkbox">
+          <input type="checkbox" id="remember-key" checked />
+          Ingat di browser ini
+        </label>
+        <button type="submit" class="btn primary" id="login-btn">Masuk</button>
+        <p class="error" id="login-error" hidden></p>
+        <p class="muted small">
+          Key admin membuka seluruh tenant. Key tenant hanya membuka datanya
+          sendiri.
+        </p>
+      </form>
+    </div>
+
+    <!-- Application shell, revealed after a successful /api/me call. -->
+    <div id="app" hidden>
+      <header class="topbar">
+        <button class="icon-btn only-mobile" id="menu-toggle" aria-label="Menu">☰</button>
+        <div class="brand small">
+          <span class="brand-mark">P</span>
+          <strong>Pesat.ai Console</strong>
+        </div>
+        <div class="topbar-right">
+          <span class="pill" id="role-pill"></span>
+          <button class="btn ghost" id="logout-btn">Keluar</button>
+        </div>
+      </header>
+
+      <div class="layout">
+        <nav class="sidebar" id="sidebar"></nav>
+        <main id="main"></main>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

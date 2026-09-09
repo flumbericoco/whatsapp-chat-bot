@@ -178,6 +178,7 @@ curl -X POST https://<worker>/api/tenants/<tenantId>/search \
 
 | Method | Path | Akses | Fungsi |
 |---|---|---|---|
+| GET | `/api/me` | admin, tenant | Peran pemilik key, dipakai dashboard untuk memilih panel |
 | POST | `/api/tenants` | admin | Buat tenant, mengembalikan API key sekali |
 | GET | `/api/tenants` | admin | Daftar semua tenant |
 | GET | `/api/tenants/:id` | admin, tenant | Detail tenant plus pemakaian bulan ini |
@@ -200,6 +201,43 @@ curl -X POST https://<worker>/api/tenants/<tenantId>/search \
 `status`. Itu setting komersial, khusus admin.
 
 ---
+
+## Dashboard
+
+Buka root Worker di browser, misalnya
+`https://pesat-wa-bot.<subdomain>.workers.dev/`. Dashboard disajikan sebagai
+static asset oleh Worker yang sama, jadi satu origin dengan `/api` dan tidak
+perlu hosting maupun CORS.
+
+Login dengan menempelkan API key. Panel yang muncul mengikuti peran key
+tersebut, dibaca dari `GET /api/me`:
+
+- **Key admin** membuka daftar seluruh tenant, form tenant baru, rotasi key,
+  suspend, hapus, serta pengaturan komersial paket dan kuota. Admin bisa masuk
+  ke panel tenant mana pun.
+- **Key tenant** hanya membuka satu company: inbox, knowledge base, lead,
+  pemakaian, dan pengaturan bot. Paket, kuota, dan status tidak bisa diubah
+  dari sini.
+
+Isi panel tenant:
+
+| Halaman | Fungsi |
+|---|---|
+| Inbox | Daftar kontak dan transkrip gaya WhatsApp. Tombol ambil alih membuat bot diam, lalu agent membalas dari kolom pesan. Refresh otomatis, thread aktif tiap 5 detik dan daftar tiap 12 detik. |
+| Knowledge base | Tambah dokumen, lihat jumlah chunk, hapus, dan tes retrieval untuk melihat passage yang akan dibaca bot. |
+| Lead | Tabel lead yang ditangkap bot. |
+| Pemakaian | Kuota terpakai, token input dan output sungguhan, rincian 30 hari. |
+| Pengaturan | Persona, sapaan, pesan cadangan, bahasa, model, nomor eskalasi, dan kredensial WhatsApp. |
+
+Composer akan otomatis terkunci kalau percakapan sudah lewat jendela 24 jam
+Meta, dengan penjelasan bahwa yang dibutuhkan adalah template.
+
+Halaman HTML-nya sendiri bisa diakses siapa saja, tetapi tanpa API key yang
+sah tidak ada data yang bisa dibaca. Semua teks dari customer di-escape
+sebelum dirender, karena isi pesan adalah input yang tidak dipercaya.
+
+Tidak ada build step. Tiga file di `public/` adalah aplikasinya, jadi tidak ada
+framework yang perlu diikuti versinya.
 
 ## Perilaku bot
 
@@ -327,8 +365,11 @@ Daftar jujur, supaya tidak dijanjikan ke client sebelum ada:
 - Endpoint PesatRouter belum pernah dipanggil dari kode ini. Nama model dan
   dukungan tool calling wajib diverifikasi dengan dua perintah di bagian
   Verifikasi provider di atas.
-- Belum ada dashboard UI. Baru API, jadi client masih dilayani lewat curl atau
-  frontend terpisah.
+- Login dashboard masih tempel API key, disimpan di localStorage. Belum ada
+  email dan password, jadi client tidak bisa reset sendiri dan tidak bisa
+  punya beberapa user per company.
+- Dashboard belum bisa mengirim template WhatsApp, sehingga percakapan di luar
+  jendela 24 jam belum bisa dilanjutkan dari UI.
 - Ingest dokumen baru menerima teks. PDF dan DOCX harus diekstrak di luar dulu.
 - Pesan gambar, audio, dan dokumen dari customer diabaikan, hanya dicatat di log.
 - Belum ada billing otomatis. Kuota diperiksa, tetapi penagihan masih manual.
